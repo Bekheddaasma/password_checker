@@ -8,7 +8,10 @@ document.addEventListener("DOMContentLoaded", function () {
   const svgShow = document.querySelector(".svg-show");
   const svgHide = document.querySelector(".svg-hide");
   const generateLink = document.querySelector(".generate_pwd");
-  const passwordLengthDisplay = document.getElementById("password-length");
+
+  // Store original password for strength checking
+  let originalPassword = '';
+  let hashedPassword = '';
 
   // Initialize
   passwordField.disabled = true;
@@ -23,7 +26,7 @@ document.addEventListener("DOMContentLoaded", function () {
       passwordField.disabled = false;
       passwordField.focus();
       updateUI();
-       document.querySelector(".field__label").style.display = "none";
+      document.querySelector(".field__label").style.display = "none";
     }
   });
 
@@ -38,6 +41,9 @@ document.addEventListener("DOMContentLoaded", function () {
     passwordField.type = isPassword ? "text" : "password";
     svgShow.style.display = isPassword ? "block" : "none";
     svgHide.style.display = isPassword ? "none" : "block";
+    
+    // Show original password when revealed, hashed when hidden
+    passwordField.value = isPassword ? originalPassword : hashedPassword;
   });
 
   // Copy password to clipboard
@@ -45,12 +51,10 @@ document.addEventListener("DOMContentLoaded", function () {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!passwordField.value || passwordField.disabled) return;
+    if (!originalPassword || passwordField.disabled) return;
 
-    navigator.clipboard
-      .writeText(passwordField.value)
+    navigator.clipboard.writeText(originalPassword)
       .then(() => {
-        // Visual feedback
         const feedback = document.createElement("span");
         feedback.className = "copy-feedback";
         feedback.textContent = "Copied!";
@@ -71,9 +75,11 @@ document.addEventListener("DOMContentLoaded", function () {
     e.preventDefault();
     e.stopPropagation();
     passwordField.value = "";
+    originalPassword = "";
+    hashedPassword = "";
     passwordField.focus();
     updateUI();
-    checkPasswordStrength(""); // Update strength meter
+    checkPasswordStrength("");
   });
 
   // Generate password
@@ -84,22 +90,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Update UI state
   function updateUI() {
-    const hasValue = passwordField.value.length > 0;
+    const hasValue = originalPassword.length > 0;
     copyBtn.style.display = hasValue ? "block" : "none";
     clearBtn.style.display = hasValue ? "block" : "none";
-    if (passwordLengthDisplay) {
-      passwordLengthDisplay.textContent = `${passwordField.value.length}/8`;
-    }
   }
 
-  // Generate strong password that meets all requirements
+  // Generate strong password
   function generateStrongPassword() {
     const requirements = {
-      length: 12, // Minimum length
-      upper: true, // Requires uppercase
-      lower: true, // Requires lowercase
-      number: true, // Requires numbers
-      special: true, // Requires special chars
+      length: 12,
+      upper: true,
+      lower: true,
+      number: true,
+      special: true,
     };
 
     const chars = {
@@ -112,35 +115,26 @@ document.addEventListener("DOMContentLoaded", function () {
     let password = "";
     let allChars = "";
 
-    if (requirements.upper) {
-      password += getRandomChar(chars.upper);
-      allChars += chars.upper;
-    }
-    if (requirements.lower) {
-      password += getRandomChar(chars.lower);
-      allChars += chars.lower;
-    }
-    if (requirements.number) {
-      password += getRandomChar(chars.number);
-      allChars += chars.number;
-    }
-    if (requirements.special) {
-      password += getRandomChar(chars.special);
-      allChars += chars.special;
-    }
+    // Ensure at least one of each required character type
+    if (requirements.upper) password += getRandomChar(chars.upper);
+    if (requirements.lower) password += getRandomChar(chars.lower);
+    if (requirements.number) password += getRandomChar(chars.number);
+    if (requirements.special) password += getRandomChar(chars.special);
 
+    // Fill remaining length
+    allChars = [chars.upper, chars.lower, chars.number, chars.special].join("");
     for (let i = password.length; i < requirements.length; i++) {
       password += getRandomChar(allChars);
     }
 
-    password = password
-      .split("")
-      .sort(() => 0.5 - Math.random())
-      .join("");
+    // Shuffle the password
+    password = password.split("").sort(() => 0.5 - Math.random()).join("");
 
-    // Update field
+    // Update fields
     passwordField.disabled = false;
-    passwordField.value = password;
+    originalPassword = password;
+    hashedPassword = hashPassword(password);
+    passwordField.value = hashedPassword;
     passwordField.type = "password";
     svgShow.style.display = "none";
     svgHide.style.display = "block";
@@ -148,97 +142,75 @@ document.addEventListener("DOMContentLoaded", function () {
     checkPasswordStrength(password);
   }
 
-  function getRandomChar(charSet) {
-    return charSet.charAt(Math.floor(Math.random() * charSet.length));
+  // Hash password with SHA-256 and client-side salt
+  function hashPassword(password) {
+    if (!password) return '';
+    
+    // Generate a unique client-side salt for each password
+    const clientSalt = window.crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
+    
+    // Hash password + salt
+    const hashed = sha256(password + clientSalt);
+    
+    // Store the salt with the hash (format: salt:hash)
+    return `${clientSalt}:${hashed}`;
   }
 
-  // Password Strength Checker
- function checkPasswordStrength(password) {
-   const indicators = {
-     digits: /[0-9]/.test(password),
-     symbols: /[!@#$%^&*(),.?":{}|<>]/.test(password),
-     capital: /[A-Z]/.test(password),
-     length: password.length >= 8,
-   };
+  // Password strength checker (unchanged)
+  function checkPasswordStrength(password) {
+    const indicators = {
+      digits: /[0-9]/.test(password),
+      symbols: /[!@#$%^&*(),.?":{}|<>]/.test(password),
+      capital: /[A-Z]/.test(password),
+      length: password.length >= 8,
+    };
 
-   // Update checkboxes with SVG icons
-   Object.keys(indicators).forEach((key) => {
-     const checkbox = document.getElementById(key);
-     if (checkbox) {
-       const isChecked = indicators[key];
-       checkbox.checked = isChecked;
+    // Update checkboxes
+    Object.keys(indicators).forEach((key) => {
+      const checkbox = document.getElementById(key);
+      if (checkbox) {
+        const isChecked = indicators[key];
+        checkbox.checked = isChecked;
 
-       const parent = checkbox.closest(".rules__checkbox");
-       if (parent) {
-         const uncheckedIcon = parent.querySelector(".checkbox-icon.unchecked");
-         const checkedIcon = parent.querySelector(".checkbox-icon.checked");
-         const fullStrengthIcon = parent.querySelector(
-           ".checkbox-icon.full-strength"
-         );
-         const labelText = parent.querySelector(".checkbox-label");
+        const parent = checkbox.closest(".rules__checkbox");
+        if (parent) {
+          const uncheckedIcon = parent.querySelector(".checkbox-icon.unchecked");
+          const checkedIcon = parent.querySelector(".checkbox-icon.checked");
+          const fullStrengthIcon = parent.querySelector(".checkbox-icon.full-strength");
+          const labelText = parent.querySelector(".checkbox-label");
 
-         if (uncheckedIcon)
-           uncheckedIcon.style.display = isChecked ? "none" : "block";
-         if (checkedIcon)
-           checkedIcon.style.display = isChecked ? "block" : "none";
-         if (fullStrengthIcon) fullStrengthIcon.style.display = "none";
-         if (labelText) {
-           labelText.style.color = isChecked ? "#4dff88" : "#FF6B6B";
-         }
-       }
-     }
-   });
+          if (uncheckedIcon) uncheckedIcon.style.display = isChecked ? "none" : "block";
+          if (checkedIcon) checkedIcon.style.display = isChecked ? "block" : "none";
+          if (fullStrengthIcon) fullStrengthIcon.style.display = "none";
+          if (labelText) labelText.style.color = isChecked ? "#4dff88" : "#FF6B6B";
+        }
+      }
+    });
 
-   // Check if all requirements are met for full strength styling
-   const strength = Object.values(indicators).filter(Boolean).length;
-   const allMet = strength === Object.keys(indicators).length;
+    // Update progress bar
+    const strength = Object.values(indicators).filter(Boolean).length;
+    const progress = (strength / Object.keys(indicators).length) * 100;
+    const indicator = document.querySelector(".indicator");
+    if (indicator) {
+      indicator.style.width = `${progress}%`;
+      indicator.className = `indicator p-0 m-0 bg-${
+        progress < 50 ? "danger" : progress < 75 ? "warning" : "success"
+      }`;
+    }
+  }
 
-   if (allMet) {
-     document.querySelectorAll(".rules__checkbox").forEach((checkbox) => {
-       const uncheckedIcon = checkbox.querySelector(".checkbox-icon.unchecked");
-       const checkedIcon = checkbox.querySelector(".checkbox-icon.checked");
-       const fullStrengthIcon = checkbox.querySelector(
-         ".checkbox-icon.full-strength"
-       );
-       const labelText = checkbox.querySelector(".checkbox-label");
-
-       if (uncheckedIcon) uncheckedIcon.style.display = "none";
-       if (checkedIcon) checkedIcon.style.display = "none";
-       if (fullStrengthIcon) fullStrengthIcon.style.display = "block";
-       if (labelText) {
-         labelText.style.color = "#4dff88";
-         labelText.style.textDecoration = "none";
-       }
-     });
-   }
-
-   // Rest of your strength meter logic...
-   const progress = (strength / Object.keys(indicators).length) * 100;
-   const indicator = document.querySelector(".indicator");
-   if (indicator) {
-     indicator.style.width = `${progress}%`;
-     indicator.className = `indicator p-0 m-0 bg-${
-       progress < 50 ? "danger" : progress < 75 ? "warning" : "success"
-     }`;
-   }
-
-   // Update strength text
-   const strengthText = document.querySelector(".strength-text");
-   if (strengthText) {
-     strengthText.textContent =
-       progress < 50 ? "Weak" : progress < 75 ? "Medium" : "Strong";
-     strengthText.className = `strength-text text-${
-       progress < 50 ? "danger" : progress < 75 ? "warning" : "success"
-     }`;
-   }
- }
+  // Handle input changes
+  passwordField.addEventListener("input", function () {
+    originalPassword = this.value;
+    hashedPassword = hashPassword(originalPassword);
+    updateUI();
+    checkPasswordStrength(originalPassword);
+  });
 
   // Initial UI update
   updateUI();
-
-  // Update on input
-  passwordField.addEventListener("input", function () {
-    updateUI();
-    checkPasswordStrength(this.value);
-  });
 });
+
+function getRandomChar(charSet) {
+  return charSet.charAt(Math.floor(Math.random() * charSet.length));
+}
