@@ -9,9 +9,10 @@ document.addEventListener("DOMContentLoaded", function () {
   const svgHide = document.querySelector(".svg-hide");
   const generateLink = document.querySelector(".generate_pwd");
 
-  // Store original password for strength checking
+  // State variables
   let originalPassword = '';
   let hashedPassword = '';
+  let isPasswordVisible = false;
 
   // Initialize
   passwordField.disabled = true;
@@ -37,13 +38,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (passwordField.disabled) return;
 
-    const isPassword = passwordField.type === "password";
-    passwordField.type = isPassword ? "text" : "password";
-    svgShow.style.display = isPassword ? "block" : "none";
-    svgHide.style.display = isPassword ? "none" : "block";
+    isPasswordVisible = !isPasswordVisible;
+    passwordField.type = isPasswordVisible ? "text" : "password";
+    passwordField.value = isPasswordVisible ? originalPassword : hashedPassword;
     
-    // Show original password when revealed, hashed when hidden
-    passwordField.value = isPassword ? originalPassword : hashedPassword;
+    svgShow.style.display = isPasswordVisible ? "block" : "none";
+    svgHide.style.display = isPasswordVisible ? "none" : "block";
   });
 
   // Copy password to clipboard
@@ -77,6 +77,8 @@ document.addEventListener("DOMContentLoaded", function () {
     passwordField.value = "";
     originalPassword = "";
     hashedPassword = "";
+    isPasswordVisible = false;
+    passwordField.type = "password";
     passwordField.focus();
     updateUI();
     checkPasswordStrength("");
@@ -95,7 +97,7 @@ document.addEventListener("DOMContentLoaded", function () {
     clearBtn.style.display = hasValue ? "block" : "none";
   }
 
-  // Generate strong password
+  // Generate strong password that meets all requirements
   function generateStrongPassword() {
     const requirements = {
       length: 12,
@@ -115,19 +117,16 @@ document.addEventListener("DOMContentLoaded", function () {
     let password = "";
     let allChars = "";
 
-    // Ensure at least one of each required character type
     if (requirements.upper) password += getRandomChar(chars.upper);
     if (requirements.lower) password += getRandomChar(chars.lower);
     if (requirements.number) password += getRandomChar(chars.number);
     if (requirements.special) password += getRandomChar(chars.special);
 
-    // Fill remaining length
-    allChars = [chars.upper, chars.lower, chars.number, chars.special].join("");
+    allChars = chars.upper + chars.lower + chars.number + chars.special;
     for (let i = password.length; i < requirements.length; i++) {
       password += getRandomChar(allChars);
     }
 
-    // Shuffle the password
     password = password.split("").sort(() => 0.5 - Math.random()).join("");
 
     // Update fields
@@ -136,27 +135,22 @@ document.addEventListener("DOMContentLoaded", function () {
     hashedPassword = hashPassword(password);
     passwordField.value = hashedPassword;
     passwordField.type = "password";
+    isPasswordVisible = false;
     svgShow.style.display = "none";
     svgHide.style.display = "block";
     updateUI();
     checkPasswordStrength(password);
   }
 
-  // Hash password with SHA-256 and client-side salt
+  // Hash password with salt
   function hashPassword(password) {
     if (!password) return '';
-    
-    // Generate a unique client-side salt for each password
-    const clientSalt = window.crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
-    
-    // Hash password + salt
-    const hashed = sha256(password + clientSalt);
-    
-    // Store the salt with the hash (format: salt:hash)
-    return `${clientSalt}:${hashed}`;
+    const salt = window.crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
+    const pepper = "Ensia2025"; 
+    return `sha256:${salt}:${sha256(password + salt + pepper)}`;
   }
 
-  // Password strength checker (unchanged)
+  // Password strength checker
   function checkPasswordStrength(password) {
     const indicators = {
       digits: /[0-9]/.test(password),
@@ -199,10 +193,16 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // Handle input changes
+  // Handle input changes with real-time hashing
   passwordField.addEventListener("input", function () {
     originalPassword = this.value;
     hashedPassword = hashPassword(originalPassword);
+    
+    // Only update field if not in visible mode
+    if (!isPasswordVisible) {
+      this.value = hashedPassword;
+    }
+    
     updateUI();
     checkPasswordStrength(originalPassword);
   });
